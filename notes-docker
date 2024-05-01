@@ -1,0 +1,15 @@
+docker build --tag extraction_image .
+
+docker run --privileged -it --name extraction_container --entrypoint /bin/bash extraction_image
+
+docker start -it --entrypoint /bin/bash extraction_container
+
+
+docker build --tag e .; docker rm c; docker run --privileged -it --name c --entrypoint /bin/bash e
+
+docker run \
+  --rm \
+  --pull always \
+  -v /path/to/extract-dir/on/host:/data/output \
+  -v /path/to/files/on/host:/data/input \
+ghcr.io/onekey-sec/unblob:latest /data/input/path/to/file
