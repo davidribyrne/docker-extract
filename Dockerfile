@@ -116,6 +116,7 @@ RUN python3 setup.py install && binwalk -h
 
 RUN mkdir -p /data/input /data/output
 RUN useradd -m -u 1000 -s /bin/bash extract
+COPY .bashrc /user/extract
 RUN chown -R extract /data
 WORKDIR /data
 # USER extract
