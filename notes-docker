@@ -5,7 +5,9 @@ docker run --privileged -it --name extraction_container --entrypoint /bin/bash e
 docker start -it --entrypoint /bin/bash extraction_container
 
 
-docker build --tag e .; docker rm c; docker run --privileged -it --name c --entrypoint /bin/bash e
+docker build --tag e .
+docker rm c
+docker run --privileged -it --name c --entrypoint /bin/bash e
 
 docker run \
   --rm \
@@ -13,3 +15,121 @@ docker run \
   -v /path/to/extract-dir/on/host:/data/output \
   -v /path/to/files/on/host:/data/input \
 ghcr.io/onekey-sec/unblob:latest /data/input/path/to/file
+
+
+
+
+# mkdir ../lists-$round
+# find . -type f > ../lists-$round/files
+# grep -rIl . . | sort > ../lists-$round/non-binary-files
+# find . -type f -not -empty | sort > ../lists-$round/non-empty-files
+comm -1 -2 ../lists-$round/non-empty-files ../lists-$round/non-binary-files > ../lists-$round/text-files
+comm -2 -3 ../lists-$round/non-empty-files ../lists-$round/non-binary-files > ../lists-$round/bin-files
+# wc -l ../lists*/bin-files
+# comm -2 -3 ../lists-$round/bin-files ../lists-$old_round/bin-files > ../lists-$round/new-bin-files
+
+
+
+export old_round=12
+export round=13
+
+while [[ -s ../lists-$round/new-bin-files ]] 
+do
+  ((old_round++))
+  ((round++))
+  echo starting round $round
+  mkdir ../lists-$round
+  time find . -type f | sort > ../lists-$round/files
+  time find . -type f -not -empty | sort > ../lists-$round/non-empty-files
+
+  comm -2 -3 ../lists-$round/files ../lists-$old_round/files > ../lists-$round/new-files
+  comm -1 -2 ../lists-$round/new-files ../lists-$round/files > ../lists-$round/new-non-empty-files
+
+  cat ../lists-$round/new-files | sed -E -e "s/(.+)/'\1'/" | xargs grep -Il . > ../lists-$round/new-non-binary-files
+  comm -1 -2 ../lists-$round/new-non-empty-files ../lists-$round/new-non-binary-files > ../lists-$round/new-text-files
+  comm -2 -3 ../lists-$round/new-non-empty-files ../lists-$round/new-non-binary-files > ../lists-$round/new-bin-files
+
+  wc ../lists-$round/*
+  time nice parallel --resume --bar --jobs $THREADS --joblog ../joblogs/7z-joblog-$round --results '../logs/7z/{}' 7z x -o'{}.7z_extracted' '{}' < ../lists-$round/new-bin-files
+done
+
+
+
+--keep-going
+--uncompress
+--mime
+
+--parameter
+
+
+Name         Default    Explanation
+bytes        1048576    max number of bytes to read from file
+elf_notes    256        max ELF notes processed
+elf_phnum    2048       max ELF program sections processed
+elf_shnum    32768      max ELF sections processed
+encoding     65536      max number of bytes to scan for encoding evaluation
+indir        50         recursion limit for indirect magic
+name         50         use count limit for name/use magic
+regex        8192       length limit for regex searches
+
+find . -type f -not -empty > ../not-empty-files
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --files-from ../lists/files > ../file-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --mime --files-from ../lists/files > ../file-mime-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --uncompress --files-from ../lists/files > ../file-uncompress-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --keep-going --files-from ../lists/files > ../file-keep-going-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --uncompress --keep-going --files-from ../lists/files > ../file-uncompress-keep-going-types &
+
+
+cat ../lists/files |grep -i '(kb\d{5,9}|ndp\d{2,5}).*?(x86|x64)|AccessDatabaseEngine_x64' > ../os
+
+time cat ../o | sed -E -e "s/(.+)/'\1' /" | xargs rm
+
+head ../os > ../o
+
+old_ifs=$IFS
+IFS='@@@' 
+for f in $(cat ../lists/bin-=files|tr '\n' "$IFS")
+do
+  dir="$f.7z_extracted"
+  if [[ ! -f "$f" ]]
+  then
+    echo Missing file -- $f
+  else
+    if [[ ! -d "$dir" ]]
+    then
+      echo Missing dir -- $dir
+    else
+      echo Found dir -- $dir
+    fi
+  fi
+done
+IFS=$old_ifs
+
+
+fgrep 'Missing dir' missing |sed -E -e 's/^Missing dir -- //;s/\.7z_extracted$//' > remaining-bin-files
+
+
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --files-from ../remaining-bin-files > ../remaining-bin-file-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --mime --files-from ../remaining-bin-files > ../remaining-bin-file-mime-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --uncompress --files-from ../remaining-bin-files > ../remaining-bin-file-uncompress-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --keep-going --files-from ../remaining-bin-files > ../remaining-bin-file-keep-going-types &
+time file --parameter bytes=10485760 --parameter elf_notes=2560 --parameter elf_phnum=20480 --parameter elf_shnum=327680 --parameter encoding=655360 --parameter indir=500 --parameter name=500 --parameter regex=81920 --separator "@@@" --no-pad --uncompress --keep-going --files-from ../remaining-bin-files > ../remaining-bin-file-uncompress-keep-going-types &
+
+
+
+cat remaining-bin-unique-file-types |grep -vi '\bboot\b|filesystem|unknown readable demand|sqlite|u-boot|archive|compress|DIY-Thermocam raw data' |grep -vi 'XML|Windows Precompiled iNF|Windows Registry|Windows setup INF|Windows boot log|Windows Enhanced Metafile|truetype|unicode|timezone data|\b(image|audio) data\b|screen image|Windows metafile|Windows Performance|TeX font metric|\baudio\b|encrypted data|PGP Secret|\bRIFF\b|bitmap|document|Rich Text Format|OpenPGP Public Ke|BASIC program|Event Log|Windows icon|ASCII text|Windows cursor|MSVC program database|COFF object file|Hewlett-Packard Graphics Language|GNU message catalog|compiled Java class|Delphi compiled form|Byte-compiled Python module'
+
+
+
+
+
+nice parallel --resume --bar --jobs $THREADS --joblog ../joblogs/unblob-joblog --results '../logs/unblob/{}/parallel' unblob --process-num 10 --clear-skip-magics --report '../logs/unblob/{}/unblob.report' --log '../logs/unblob/{}/unblob.log' --keep-extracted-chunks '{}' < ../lists/unblob-files
+
+
+
+nice parallel --resume --bar --jobs $THREADS --joblog ../joblogs/binwalk-joblog --results '../logs/binwalk/{}' binwalk --run-as=root -C '{//}' --matryoshka --extract '{}' < ../lists/binwalk-files
+
+find /data/logs/unblob -type f -delete; rm /data/joblogs/unblob-joblog
+cat ../../lists/unblob-files | sed -E -e "s/(.+)/'\1'/" | xargs mkdir -p
+
+

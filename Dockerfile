@@ -1,15 +1,13 @@
+FROM python:3.8-bookworm AS build-and-install
 # There is a known problem with Python 3.12
 # https://stackoverflow.com/questions/77274572/multiqc-modulenotfounderror-no-module-named-imp
 
 # And another problem with Python 3.11
 # AttributeError: module 'collections' has no attribute 'Callable'
-FROM python:3.8-bookworm AS build-and-install
 
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/src/app/bin \
     DEBIAN_FRONTEND=noninteractive
 
-### Took out the deps.sh from binwalk's installation script, baked in the dependencies into the main prereqs installation
-### The prereqs that dont come from system's repo, are taken care of later
 RUN set -xue
 RUN sed -Ei -e 's/(Components: main)/\1 contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources
 RUN apt-get update -y
@@ -26,7 +24,7 @@ RUN apt-get install -y --no-install-recommends  \
     android-sdk-libsparse-utils lziprecover unar zstd \
     # For bulk_extractor
     flex libewf-dev libre2-dev libpcre3-dev \
-    # For humans in a shell
+    # For humans in a shell (bash-completion doesn't seem to work, need to fix)
     bash-completion vim less
 
 RUN pip install --upgrade pip
@@ -75,24 +73,12 @@ RUN wget https://ftpmirror.gnu.org/parallel/parallel-latest.tar.bz2 \
         && make install)
 
 
-# RUN be_url=$( \
-#     curl -s https://api.github.com/repos/simsong/bulk_extractor/releases/latest \
-#     | grep -i browser_download_url \
-#     | cut -d : -f 2,3 \
-#     | tr -d \" ) \
-#     && curl --location --output bulk_extractor.tar.gz $be_url \
-#     && tar -xf bulk_extractor.tar.gz \
-#     && (cd bulk_extractor-* \
-
 RUN git clone --depth 1 --recurse-submodules https://github.com/simsong/bulk_extractor.git \
     && (cd bulk_extractor \
         && ./bootstrap.sh \
         && ./configure \
         && make \
         && make install)
-        
-
-
 
 
 RUN echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen \
@@ -106,22 +92,31 @@ RUN git clone https://github.com/ReFirmLabs/binwalk /tmp/binwalk
 WORKDIR /tmp/binwalk
 RUN python3 setup.py install && binwalk -h
 
+RUN unblob --show-external-dependencies
 
-# Binwalk tests do not work correctly on Docker
+
 # FROM build-and-install AS unit-tests
 # RUN pip install coverage nose
 # RUN python3 setup.py test \
 #     && dd if=/dev/urandom of=/tmp/random.bin bs=1M count=1 && binwalk -J -E /tmp/random.bin
 
 
+# Setup locale. According to binwalk, "this prevents Python 3 IO encoding issues."
+ENV DEBIAN_FRONTEND=teletype \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    PYTHONUTF8="1" \
+    PYTHONHASHSEED="random"
+
+
 RUN mkdir -p /data/input /data/output
 RUN useradd -m -u 1000 -s /bin/bash extract
-COPY .bashrc /user/extract
+# COPY .bashrc /user/extract
 RUN chown -R extract /data
 WORKDIR /data
+# Keep running as root
 # USER extract
-
-
 
 
 # FROM build-and-install AS cleanup-and-release
@@ -129,21 +124,10 @@ WORKDIR /data
 #     /var/lib/apt/lists/* \
 #     /tmp/binwalk/* /var/tmp/* \
 #     /root/.cache/pip
-
+# 
 # RUN apt-get -yq purge *-dev git build-essential gcc g++ \
 #     && apt-get -y autoremove \
 #     && apt-get -y autoclean
-
-
-
-
-# Setup locale. According to binwalk, this prevents Python 3 IO encoding issues.
-ENV DEBIAN_FRONTEND=teletype \
-    LANG=en_US.UTF-8 \
-    LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8 \
-    PYTHONUTF8="1" \
-    PYTHONHASHSEED="random"
 
 
 ENTRYPOINT ["/bin/bash"]
